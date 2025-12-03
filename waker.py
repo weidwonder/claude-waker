@@ -53,17 +53,6 @@ def load_config():
         sys.exit(1)
 
 
-def should_wake_now(wake_hours_str):
-    """检查当前时间是否应该唤醒"""
-    try:
-        wake_hours = [int(h.strip()) for h in wake_hours_str.split(',')]
-        current_hour = datetime.now().hour
-        return current_hour in wake_hours
-    except Exception as e:
-        logger.error(f"❌ 解析 wake_hours 失败: {e}")
-        return False
-
-
 async def wake_account(account_name, oauth_token):
     """唤醒单个账号"""
     try:
@@ -76,20 +65,18 @@ async def wake_account(account_name, oauth_token):
         os.environ['CLAUDE_CODE_OAUTH_TOKEN'] = oauth_token
 
         # 发送唤醒消息，使用超时
-        response_received = False
+        # 注意：由于 claude_agent_sdk 的内部实现，我们简单地发送请求并等待短暂响应即可
         try:
             async with asyncio.timeout(60):  # 60秒超时
-                async for message in query(prompt='请回复我"你好"'):
-                    response_received = True
-                    break  # 收到第一条消息就退出
+                # 使用 anext() 获取第一条消息，不显式关闭生成器以避免 cancel scope 错误
+                gen = query(prompt='hi')
+                await anext(gen)
+                logger.info(f"✅ {account_name} - 唤醒成功")
+                return True
         except asyncio.TimeoutError:
             logger.warning(f"⚠️  {account_name} - 响应超时（60秒），但唤醒请求已发送")
             return True  # 超时也算成功，因为请求已经发送
-
-        if response_received:
-            logger.info(f"✅ {account_name} - 唤醒成功")
-            return True
-        else:
+        except StopAsyncIteration:
             logger.warning(f"⚠️  {account_name} - 未收到响应")
             return False
 
@@ -106,13 +93,6 @@ async def main():
     # 加载配置
     config = load_config()
 
-    # 检查是否应该在当前时间唤醒
-    if not should_wake_now(config['wake_hours']):
-        current_hour = datetime.now().hour
-        logger.info(f"当前时间 {current_hour}:XX 不在唤醒时间内，跳过")
-        logger.info(f"配置的唤醒时间: {config['wake_hours']}")
-        return
-
     logger.info(f"开始唤醒任务，共 {len(config['accounts'])} 个账号")
 
     # 统计结果
@@ -120,7 +100,7 @@ async def main():
     fail_count = 0
 
     # 遍历所有账号
-    for account in config['accounts']:
+    for idx, account in enumerate(config['accounts']):
         account_name = account.get('name', '未命名账号')
         oauth_token = account.get('token', '')
 
@@ -129,15 +109,20 @@ async def main():
             fail_count += 1
             continue
 
-        # 唤醒账号
-        success = await wake_account(account_name, oauth_token)
-        if success:
-            success_count += 1
-        else:
+        # 在独立任务中唤醒账号，避免异步清理错误影响后续账号
+        try:
+            task = asyncio.create_task(wake_account(account_name, oauth_token))
+            success = await task
+            if success:
+                success_count += 1
+            else:
+                fail_count += 1
+        except Exception as e:
+            logger.error(f"❌ {account_name} - 任务执行失败: {e}")
             fail_count += 1
 
         # 账号之间间隔2秒
-        if account != config['accounts'][-1]:
+        if idx < len(config['accounts']) - 1:
             await asyncio.sleep(2)
 
     # 输出统计
