@@ -86,7 +86,7 @@ claude setup-token
 这会打开浏览器进行认证，完成后会在终端输出 token，类似：
 
 ```
-Your OAuth token: eyJhbGc...（很长的字符串）
+Your OAuth token: sk-ant-oat03-...（很长的字符串）
 ```
 
 **复制并保存这个 token**。
@@ -118,9 +118,9 @@ cd claude_waker
 # Claude 账号列表
 accounts:
   - name: "主账号"
-    token: "eyJhbGc...（第一个账号的token）"
+    token: "sk-ant-oat03-...（第一个账号的token）"
   - name: "备用账号"
-    token: "eyJhbGc...（第二个账号的token）"
+    token: "sk-ant-oat03-...（第二个账号的token）"
 
 # 唤醒时间（小时，0-23）
 # 实际触发时间为每小时的 05 分
@@ -189,10 +189,10 @@ crontab -l | grep "Claude Waker"
 
 ### 卸载
 
-删除 crontab 任务：
+运行卸载脚本：
 
 ```bash
-crontab -l | grep -v "Claude Waker" | crontab -
+./uninstall.sh
 ```
 
 ## ⚙️ 配置说明

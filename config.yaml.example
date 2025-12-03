@@ -4,9 +4,9 @@
 # Claude 账号列表
 accounts:
   - name: "主账号"
-    token: "your-oauth-token-here-1"
+    token: "sk-ant-oat03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
   - name: "备用账号"
-    token: "your-oauth-token-here-2"
+    token: "sk-ant-oat03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 # 唤醒时间（小时）
 # 格式：逗号分隔的小时数，0-23，最多5个
