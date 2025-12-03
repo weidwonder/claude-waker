@@ -1,0 +1,16 @@
+# Claude Waker 配置文件示例
+# 复制此文件为 config.yaml 并填入真实的 OAuth Token
+
+# Claude 账号列表
+accounts:
+  - name: "主账号"
+    token: "your-oauth-token-here-1"
+  - name: "备用账号"
+    token: "your-oauth-token-here-2"
+
+# 唤醒时间（小时）
+# 格式：逗号分隔的小时数，0-23，最多5个
+# 示例：
+#   "7,12,17" - 在 7:05, 12:05, 17:05 唤醒
+#   "9,14,19" - 在 9:05, 14:05, 19:05 唤醒
+wake_hours: "7,12,17"
