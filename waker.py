@@ -53,31 +53,63 @@ def load_config():
         sys.exit(1)
 
 
-async def wake_account(account_name, oauth_token):
-    """唤醒单个账号"""
+async def wake_account_subprocess(account_name, oauth_token):
+    """在子进程中唤醒单个账号，确保 token 完全隔离"""
     try:
-        # 动态导入，避免在配置验证时就需要安装依赖
-        from claude_agent_sdk import query
-
         logger.info(f"正在唤醒账号: {account_name}")
 
-        # 设置环境变量
-        os.environ['CLAUDE_CODE_OAUTH_TOKEN'] = oauth_token
+        # 创建子进程脚本
+        script = f'''
+import os
+import asyncio
 
-        # 发送唤醒消息，使用超时
-        # 注意：由于 claude_agent_sdk 的内部实现，我们简单地发送请求并等待短暂响应即可
+async def run():
+    os.environ['CLAUDE_CODE_OAUTH_TOKEN'] = {repr(oauth_token)}
+    from claude_agent_sdk import query
+
+    try:
+        async with asyncio.timeout(60):
+            gen = query(prompt='hi')
+            async for msg in gen:
+                msg_type = type(msg).__name__
+                if 'SystemMessage' not in msg_type:
+                    print(f"SUCCESS:{{msg_type}}")
+                    return
+            print("ERROR:未收到有效响应")
+    except asyncio.TimeoutError:
+        print("TIMEOUT:响应超时")
+    except Exception as e:
+        print(f"ERROR:{{e}}")
+
+asyncio.run(run())
+'''
+
+        # 运行子进程
+        process = await asyncio.create_subprocess_exec(
+            sys.executable, '-c', script,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
         try:
-            async with asyncio.timeout(60):  # 60秒超时
-                # 使用 anext() 获取第一条消息，不显式关闭生成器以避免 cancel scope 错误
-                gen = query(prompt='hi')
-                await anext(gen)
-                logger.info(f"✅ {account_name} - 唤醒成功")
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=70)
+            output = stdout.decode('utf-8').strip()
+
+            if 'SUCCESS:' in output:
+                msg_type = output.split('SUCCESS:')[1]
+                logger.info(f"✅ {account_name} - 唤醒成功，收到响应: {msg_type}")
                 return True
+            elif 'TIMEOUT:' in output:
+                logger.warning(f"⚠️  {account_name} - 响应超时（60秒），但唤醒请求已发送")
+                return True
+            else:
+                error_msg = output.split('ERROR:')[1] if 'ERROR:' in output else output
+                logger.error(f"❌ {account_name} - 唤醒失败: {error_msg}")
+                return False
+
         except asyncio.TimeoutError:
-            logger.warning(f"⚠️  {account_name} - 响应超时（60秒），但唤醒请求已发送")
-            return True  # 超时也算成功，因为请求已经发送
-        except StopAsyncIteration:
-            logger.warning(f"⚠️  {account_name} - 未收到响应")
+            process.kill()
+            logger.warning(f"⚠️  {account_name} - 子进程超时")
             return False
 
     except Exception as e:
@@ -109,10 +141,9 @@ async def main():
             fail_count += 1
             continue
 
-        # 在独立任务中唤醒账号，避免异步清理错误影响后续账号
+        # 使用子进程唤醒账号，确保 token 完全隔离
         try:
-            task = asyncio.create_task(wake_account(account_name, oauth_token))
-            success = await task
+            success = await wake_account_subprocess(account_name, oauth_token)
             if success:
                 success_count += 1
             else:
