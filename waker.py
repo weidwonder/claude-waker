@@ -65,16 +65,41 @@ import asyncio
 
 async def run():
     os.environ['CLAUDE_CODE_OAUTH_TOKEN'] = {repr(oauth_token)}
-    from claude_agent_sdk import query
+    from claude_agent_sdk import (
+        AssistantMessage,
+        ClaudeAgentOptions,
+        ResultMessage,
+        query,
+    )
 
     try:
         async with asyncio.timeout(60):
-            gen = query(prompt='hi')
+            # Do not load user/project hooks, MCP servers, or CLAUDE.md files for
+            # this minimal wake-up request. They can emit lifecycle events before
+            # Claude has actually responded.
+            options = ClaudeAgentOptions(setting_sources=[])
+            gen = query(prompt='hi', options=options)
+            received_assistant = False
+
             async for msg in gen:
-                msg_type = type(msg).__name__
-                if 'SystemMessage' not in msg_type:
-                    print(f"SUCCESS:{{msg_type}}")
+                if isinstance(msg, AssistantMessage):
+                    if msg.error:
+                        print(f"ERROR:Claude 返回错误: {{msg.error}}")
+                        return
+                    received_assistant = True
+
+                elif isinstance(msg, ResultMessage):
+                    if msg.is_error:
+                        details = '; '.join(msg.errors or [])
+                        if not details:
+                            details = msg.result or f"API 状态: {{msg.api_error_status}}"
+                        print(f"ERROR:{{details}}")
+                    elif received_assistant:
+                        print("SUCCESS:AssistantMessage")
+                    else:
+                        print("ERROR:请求结束，但未收到 Claude 回复")
                     return
+
             print("ERROR:未收到有效响应")
     except asyncio.TimeoutError:
         print("TIMEOUT:响应超时")
